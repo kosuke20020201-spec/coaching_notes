@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Session OS | レッスンメモ</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-mark">S</span>
+        <span>Session OS</span>
+      </div>
+
+      <nav class="type-tabs" aria-label="記録タイプ">
+        <button class="type-tab active" type="button" data-filter="all">すべて</button>
+        <button class="type-tab" type="button" data-filter="gym">ジム</button>
+        <button class="type-tab" type="button" data-filter="vocal">ボイトレ</button>
+        <button class="type-tab" type="button" data-filter="cross">横断</button>
+      </nav>
+
+      <div class="header-actions">
+        <label class="search-box" aria-label="検索">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="m20 20-4-4"></path>
+          </svg>
+          <input id="searchInput" type="search" placeholder="検索">
+        </label>
+        <button id="newSessionButton" class="button primary" type="button">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5v14M5 12h14"></path>
+          </svg>
+          <span>新規記録</span>
+        </button>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <aside class="left-column">
+        <section class="date-panel" aria-labelledby="todayHeading">
+          <p class="eyebrow" id="todayHeading">TODAY</p>
+          <div class="today-number" id="todayNumber">28</div>
+          <div class="today-month" id="todayMonth">2026 / 06</div>
+          <div class="score-grid">
+            <div class="score-card">
+              <strong id="fatiguePreview">7</strong>
+              <span>疲労</span>
+            </div>
+            <div class="score-card">
+              <strong id="focusPreview">8</strong>
+              <span>集中</span>
+            </div>
+            <div class="score-card">
+              <strong id="sleepPreview">6</strong>
+              <span>睡眠</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="history-panel" aria-labelledby="historyHeading">
+          <div class="panel-title">
+            <h2 id="historyHeading">セッション履歴</h2>
+            <span id="historyCount">0</span>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+      </aside>
+
+      <section class="session-editor" aria-labelledby="sessionTitleLabel">
+        <div class="session-toolbar">
+          <div class="title-stack">
+            <div class="session-type-row" role="group" aria-label="現在の記録タイプ">
+              <button class="session-type active" type="button" data-session-type="gym">ジム</button>
+              <button class="session-type" type="button" data-session-type="vocal">ボイトレ</button>
+              <button class="session-type" type="button" data-session-type="cross">横断</button>
+            </div>
+            <label class="title-field">
+              <span id="sessionTitleLabel">タイトル</span>
+              <input id="titleInput" type="text" value="">
+            </label>
+          </div>
+
+          <div class="editor-actions">
+            <input id="attachmentInput" type="file" multiple>
+            <button id="attachButton" class="button ghost" type="button">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m21.4 11.6-8.7 8.7a5 5 0 0 1-7.1-7.1l9.2-9.2a3.4 3.4 0 0 1 4.8 4.8l-9.2 9.2a1.8 1.8 0 0 1-2.6-2.6l8.6-8.6"></path>
+              </svg>
+              <span>添付</span>
+            </button>
+            <button id="duplicateButton" class="button ghost" type="button">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <rect x="8" y="8" width="10" height="10" rx="2"></rect>
+                <path d="M6 16H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              <span>複製</span>
+            </button>
+            <button id="saveButton" class="button primary" type="button">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path>
+                <path d="M17 21v-8H7v8M7 3v5h8"></path>
+              </svg>
+              <span>保存</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="meta-grid">
+          <label class="field">
+            <span>日付</span>
+            <input id="dateInput" type="date">
+          </label>
+          <label class="field">
+            <span>時間</span>
+            <input id="timeInput" type="time">
+          </label>
+          <label class="field">
+            <span>コーチ</span>
+            <input id="coachInput" type="text" placeholder="Trainer / Coach">
+          </label>
+          <label class="field">
+            <span>場所</span>
+            <input id="locationInput" type="text" placeholder="Studio / Gym">
+          </label>
+        </div>
+
+        <section class="protocol-section">
+          <div class="section-heading">
+            <h2>メニュー</h2>
+            <button id="addMenuRowButton" class="icon-button" type="button" aria-label="メニュー行を追加">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="menu-table" id="menuTable"></div>
+        </section>
+
+        <section class="note-grid" aria-label="レッスンノート">
+          <label class="note-card">
+            <span>今日聞いたこと</span>
+            <textarea id="heardInput"></textarea>
+          </label>
+          <label class="note-card">
+            <span>自分の感覚</span>
+            <textarea id="feelingInput"></textarea>
+          </label>
+          <label class="note-card">
+            <span>次回まで</span>
+            <textarea id="nextInput"></textarea>
+          </label>
+          <label class="note-card">
+            <span>つながり / 気づき</span>
+            <textarea id="linkInput"></textarea>
+          </label>
+        </section>
+      </section>
+
+      <aside class="right-column">
+        <section class="side-panel" aria-labelledby="conditionHeading">
+          <div class="panel-title">
+            <h2 id="conditionHeading">コンディション</h2>
+          </div>
+          <div class="range-list">
+            <label class="range-row">
+              <span>疲労</span>
+              <input id="fatigueInput" type="range" min="1" max="10" value="7">
+              <strong id="fatigueValue">7</strong>
+            </label>
+            <label class="range-row">
+              <span>集中</span>
+              <input id="focusInput" type="range" min="1" max="10" value="8">
+              <strong id="focusValue">8</strong>
+            </label>
+            <label class="range-row">
+              <span>睡眠</span>
+              <input id="sleepInput" type="range" min="1" max="10" value="6">
+              <strong id="sleepValue">6</strong>
+            </label>
+          </div>
+        </section>
+
+        <section class="side-panel cues-panel" aria-labelledby="cueHeading">
+          <div class="panel-title">
+            <h2 id="cueHeading">コーチングキュー</h2>
+            <span>優先順</span>
+          </div>
+          <textarea id="cuesInput" class="line-editor" aria-label="コーチングキュー"></textarea>
+          <div class="cue-list" id="cueList"></div>
+        </section>
+
+        <section class="side-panel" aria-labelledby="tagHeading">
+          <div class="panel-title">
+            <h2 id="tagHeading">タグ</h2>
+          </div>
+          <input id="tagsInput" class="single-input" type="text" placeholder="腹圧, 母音, 動画">
+          <div class="tag-list" id="tagList"></div>
+        </section>
+
+        <section class="side-panel" aria-labelledby="attachmentHeading">
+          <div class="panel-title">
+            <h2 id="attachmentHeading">添付</h2>
+          </div>
+          <div class="attachment-list" id="attachmentList"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">保存しました</div>
+  <script src="app.js"></script>
+</body>
+</html>
