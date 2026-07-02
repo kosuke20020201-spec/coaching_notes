@@ -58,6 +58,10 @@ const refs = {
   deleteButton: document.getElementById("deleteButton"),
   saveButton: document.getElementById("saveButton"),
   updatedText: document.getElementById("updatedText"),
+  deleteDialog: document.getElementById("deleteDialog"),
+  deleteDialogText: document.getElementById("deleteDialogText"),
+  cancelDeleteButton: document.getElementById("cancelDeleteButton"),
+  confirmDeleteButton: document.getElementById("confirmDeleteButton"),
   toast: document.getElementById("toast"),
 };
 
@@ -265,16 +269,30 @@ function collectCurrentNote() {
   return note;
 }
 
-function deleteActiveNote() {
+function openDeleteDialog() {
   const note = getActiveNote();
   if (!note) return;
   const label = note.title || "無題のメモ";
-  if (!window.confirm(`「${label}」を削除しますか？`)) return;
+  refs.deleteDialogText.textContent = `「${label}」を削除します。この操作は元に戻せません。`;
+  refs.deleteDialog.classList.add("show");
+  refs.deleteDialog.setAttribute("aria-hidden", "false");
+  refs.confirmDeleteButton.focus();
+}
 
+function closeDeleteDialog() {
+  refs.deleteDialog.classList.remove("show");
+  refs.deleteDialog.setAttribute("aria-hidden", "true");
+  refs.deleteButton.focus();
+}
+
+function deleteActiveNote() {
+  const note = getActiveNote();
+  if (!note) return;
   state.notes = state.notes.filter((item) => item.id !== note.id);
   const nextVisible = getVisibleNotes()[0] ?? state.notes[0] ?? null;
   state.activeId = nextVisible?.id ?? null;
   persistNotes();
+  closeDeleteDialog();
   render();
   showToast("削除しました");
 }
@@ -350,7 +368,17 @@ refs.newNoteButton.addEventListener("click", () => {
 });
 
 refs.saveButton.addEventListener("click", () => saveAndRender());
-refs.deleteButton.addEventListener("click", deleteActiveNote);
+refs.deleteButton.addEventListener("click", openDeleteDialog);
+refs.cancelDeleteButton.addEventListener("click", closeDeleteDialog);
+refs.confirmDeleteButton.addEventListener("click", deleteActiveNote);
+refs.deleteDialog.addEventListener("click", (event) => {
+  if (event.target === refs.deleteDialog) closeDeleteDialog();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && refs.deleteDialog.classList.contains("show")) {
+    closeDeleteDialog();
+  }
+});
 
 [refs.dateInput, refs.titleInput, refs.bodyInput, refs.tagsInput].forEach((input) => {
   input.addEventListener("change", () => {
@@ -367,7 +395,9 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js?v=20260703-delete-fix").then((registration) => {
+      registration.update();
+    }).catch(() => {});
   });
 }
 

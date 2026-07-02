@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v1";
+const CACHE_NAME = "session-os-v2-delete-fix";
 const ASSETS = [
   "./",
   "./index.html",

@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260703-delete-fix">
 </head>
 <body>
   <div class="app-shell">
@@ -108,7 +108,18 @@
     </main>
   </div>
 
+  <div class="confirm-overlay" id="deleteDialog" aria-hidden="true">
+    <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="deleteDialogTitle">
+      <h2 id="deleteDialogTitle">メモを削除しますか？</h2>
+      <p id="deleteDialogText">このメモを削除します。</p>
+      <div class="confirm-actions">
+        <button id="cancelDeleteButton" class="button ghost" type="button">キャンセル</button>
+        <button id="confirmDeleteButton" class="button danger solid" type="button">削除する</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite">保存しました</div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260703-delete-fix"></script>
 </body>
 </html>
