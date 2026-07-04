@@ -189,22 +189,39 @@ function renderTagFilters() {
   }
 
   refs.tagFilterList.replaceChildren();
-  const allButton = createTagFilterButton("all", `すべて (${getTagSourceNotes().length})`);
+  const allButton = createTagFilterButton("all", "すべてのメモ", getTagSourceNotes().length);
   refs.tagFilterList.append(allButton);
 
   tags.forEach((tag) => {
     const count = getTagSourceNotes().filter((note) => note.tags.includes(tag)).length;
-    refs.tagFilterList.append(createTagFilterButton(tag, `${tag} (${count})`));
+    refs.tagFilterList.append(createTagFilterButton(tag, tag, count));
   });
 }
 
-function createTagFilterButton(value, label) {
+function createTagFilterButton(value, label, count) {
   const button = document.createElement("button");
   button.type = "button";
-  button.className = "tag-filter-button";
+  button.className = "tag-folder-button";
   button.classList.toggle("active", state.tagFilter === value);
   button.dataset.tagFilter = value;
-  button.textContent = label;
+
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute("class", "folder-icon");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", "M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z");
+  icon.append(path);
+
+  const name = document.createElement("span");
+  name.className = "folder-name";
+  name.textContent = label;
+
+  const countLabel = document.createElement("span");
+  countLabel.className = "folder-count";
+  countLabel.textContent = String(count);
+
+  button.append(icon, name, countLabel);
   return button;
 }
 
@@ -417,6 +434,9 @@ refs.newNoteButton.addEventListener("click", () => {
   collectCurrentNote();
   const type = state.filter === "all" ? "gym" : state.filter;
   const note = createNote(type);
+  if (state.tagFilter !== "all") {
+    note.tags = [state.tagFilter];
+  }
   state.notes.unshift(note);
   state.activeId = note.id;
   persistNotes();
