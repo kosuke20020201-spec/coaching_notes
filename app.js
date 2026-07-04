@@ -1,5 +1,6 @@
 const STORAGE_KEY = "lesson-session-os-notes-v2";
 const LEGACY_KEY = "lesson-session-os-v1";
+const FOLDER_STORAGE_KEY = "lesson-session-os-tag-folders-v1";
 
 const typeLabels = {
   gym: "ジム",
@@ -9,12 +10,14 @@ const typeLabels = {
 
 const ALL_FOLDERS = "all";
 const ALL_TAGS = "all";
-const UNFILED_FOLDER = "未分類";
+const UNASSIGNED_FOLDER = "unassigned";
+const UNASSIGNED_FOLDER_LABEL = "未分類";
 
 const seedNotes = [];
 
 const state = {
   notes: loadNotes(),
+  folders: loadFolders(),
   activeId: null,
   filter: "all",
   folderFilter: ALL_FOLDERS,
@@ -32,6 +35,8 @@ const refs = {
   tagFolderList: document.getElementById("tagFolderList"),
   tagFilterList: document.getElementById("tagFilterList"),
   folderTagTitle: document.getElementById("folderTagTitle"),
+  addFolderButton: document.getElementById("addFolderButton"),
+  folderEditor: document.getElementById("folderEditor"),
   dateInput: document.getElementById("dateInput"),
   titleInput: document.getElementById("titleInput"),
   bodyInput: document.getElementById("bodyInput"),
@@ -63,6 +68,48 @@ function readStoredNotes(key) {
     localStorage.removeItem(key);
     return null;
   }
+}
+
+function loadFolders() {
+  try {
+    const raw = localStorage.getItem(FOLDER_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeFolder).filter(Boolean);
+  } catch {
+    localStorage.removeItem(FOLDER_STORAGE_KEY);
+    return [];
+  }
+}
+
+function normalizeFolder(item) {
+  const name = String(item?.name ?? "").trim();
+  if (!name) return null;
+  return {
+    id: String(item.id || uid()),
+    name,
+    tags: normalizeTags(Array.isArray(item.tags) ? item.tags : []),
+  };
+}
+
+function persistFolders() {
+  localStorage.setItem(FOLDER_STORAGE_KEY, JSON.stringify(state.folders));
+}
+
+function createTagFolder() {
+  const base = "新規フォルダ";
+  const names = new Set(state.folders.map((folder) => folder.name));
+  let name = base;
+  let index = 2;
+  while (names.has(name)) {
+    name = `${base} ${index}`;
+    index += 1;
+  }
+  return {
+    id: uid(),
+    name,
+    tags: [],
+  };
 }
 
 function normalizeNote(item) {
@@ -110,13 +157,24 @@ function getVisibleNotes() {
   const query = state.search.trim().toLowerCase();
   return state.notes
     .filter((note) => state.filter === "all" || note.type === state.filter)
-    .filter((note) => state.folderFilter === ALL_FOLDERS || note.tags.some((tag) => parseTag(tag).folder === state.folderFilter))
+    .filter((note) => noteMatchesFolder(note))
     .filter((note) => state.tagFilter === ALL_TAGS || note.tags.includes(state.tagFilter))
     .filter((note) => {
       if (!query) return true;
       return [note.title, note.body, ...(note.tags ?? [])].join(" ").toLowerCase().includes(query);
     })
     .sort((a, b) => `${b.date} ${b.updatedAt}`.localeCompare(`${a.date} ${a.updatedAt}`));
+}
+
+function noteMatchesFolder(note) {
+  if (state.folderFilter === ALL_FOLDERS) return true;
+  const noteTags = note.tags ?? [];
+  if (state.folderFilter === UNASSIGNED_FOLDER) {
+    return noteTags.some((tag) => isUnassignedTag(tag));
+  }
+  const folder = getFolderById(state.folderFilter);
+  if (!folder) return false;
+  return noteTags.some((tag) => folder.tags.includes(tag));
 }
 
 function createNote(type = "gym") {
@@ -132,12 +190,11 @@ function createNote(type = "gym") {
 }
 
 function getDefaultTagForCurrentFolder() {
-  if (state.folderFilter === ALL_FOLDERS) return "";
-  if (state.folderFilter === UNFILED_FOLDER) return "未整理";
-  return `${state.folderFilter}/未整理`;
+  return state.tagFilter === ALL_TAGS ? "" : state.tagFilter;
 }
 
 function render() {
+  syncFoldersWithExistingTags();
   renderFilters();
   renderFolderFilters();
   renderTagFilters();
@@ -161,22 +218,8 @@ function getTagSourceNotes() {
     });
 }
 
-function parseTag(tag) {
-  const clean = String(tag ?? "").trim();
-  const slashIndex = clean.indexOf("/");
-  if (slashIndex > 0 && slashIndex < clean.length - 1) {
-    const folder = clean.slice(0, slashIndex).trim();
-    const name = clean.slice(slashIndex + 1).trim();
-    if (folder && name) {
-      return { key: `${folder}/${name}`, folder, name };
-    }
-  }
-  return { key: clean, folder: UNFILED_FOLDER, name: clean };
-}
-
 function normalizeTag(tag) {
-  const parsed = parseTag(tag);
-  return parsed.name ? parsed.key : "";
+  return String(tag ?? "").trim().replace(/\s+/g, " ");
 }
 
 function normalizeTags(tags) {
@@ -190,45 +233,111 @@ function getFolderSourceNotes() {
   return getTagSourceNotes();
 }
 
-function getAvailableFolders() {
-  const folders = new Map();
-  getFolderSourceNotes().forEach((note) => {
-    note.tags.forEach((tag) => {
-      const parsed = parseTag(tag);
-      if (!parsed.name) return;
-      if (!folders.has(parsed.folder)) {
-        folders.set(parsed.folder, new Set());
-      }
-      folders.get(parsed.folder).add(note.id);
+function getFolderById(id) {
+  return state.folders.find((folder) => folder.id === id) ?? null;
+}
+
+function getAllTagsFromNotes(notes = state.notes) {
+  const tags = new Set();
+  notes.forEach((note) => {
+    (note.tags ?? []).forEach((tag) => {
+      const clean = normalizeTag(tag);
+      if (clean) tags.add(clean);
     });
   });
-  return [...folders.entries()]
-    .map(([folder, ids]) => ({ folder, count: ids.size }))
-    .sort((a, b) => a.folder.localeCompare(b.folder, "ja"));
+  return [...tags].sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+function getTagCounts(notes = getTagSourceNotes()) {
+  const counts = new Map();
+  notes.forEach((note) => {
+    (note.tags ?? []).forEach((tag) => {
+      const clean = normalizeTag(tag);
+      if (!clean) return;
+      if (!counts.has(clean)) counts.set(clean, new Set());
+      counts.get(clean).add(note.id);
+    });
+  });
+  return new Map([...counts.entries()].map(([tag, ids]) => [tag, ids.size]));
+}
+
+function getTagOwner(tag) {
+  return state.folders.find((folder) => folder.tags.includes(tag)) ?? null;
+}
+
+function isUnassignedTag(tag) {
+  return !getTagOwner(tag);
+}
+
+function getUnassignedTags() {
+  return getAllTagsFromNotes().filter((tag) => isUnassignedTag(tag));
+}
+
+function countNotesForTags(tags, notes = getFolderSourceNotes()) {
+  const targetTags = new Set(tags);
+  if (!targetTags.size) return 0;
+  const noteIds = new Set();
+  notes.forEach((note) => {
+    if ((note.tags ?? []).some((tag) => targetTags.has(tag))) {
+      noteIds.add(note.id);
+    }
+  });
+  return noteIds.size;
+}
+
+function getTagsForFolder(folderId) {
+  if (folderId === UNASSIGNED_FOLDER) return getUnassignedTags();
+  const folder = getFolderById(folderId);
+  if (!folder) return [];
+  const existingTags = new Set(getAllTagsFromNotes());
+  return folder.tags.filter((tag) => existingTags.has(tag));
+}
+
+function syncFoldersWithExistingTags() {
+  const existingTags = new Set(getAllTagsFromNotes());
+  let changed = false;
+  state.folders.forEach((folder) => {
+    const nextTags = normalizeTags(folder.tags).filter((tag) => existingTags.has(tag));
+    if (nextTags.length !== folder.tags.length || nextTags.some((tag, index) => tag !== folder.tags[index])) {
+      folder.tags = nextTags;
+      changed = true;
+    }
+  });
+  if (changed) persistFolders();
+}
+
+function getAvailableFolders() {
+  const sourceNotes = getFolderSourceNotes();
+  const folders = state.folders.map((folder) => ({
+    id: folder.id,
+    name: folder.name,
+    count: countNotesForTags(folder.tags, sourceNotes),
+  }));
+  const unassignedTags = getUnassignedTags();
+  if (unassignedTags.length) {
+    folders.push({
+      id: UNASSIGNED_FOLDER,
+      name: UNASSIGNED_FOLDER_LABEL,
+      count: countNotesForTags(unassignedTags, sourceNotes),
+    });
+  }
+  return folders;
 }
 
 function getAvailableTagsInFolder() {
-  const tags = new Map();
   if (state.folderFilter === ALL_FOLDERS) return [];
-
-  getTagSourceNotes().forEach((note) => {
-    note.tags.forEach((tag) => {
-      const parsed = parseTag(tag);
-      if (parsed.folder !== state.folderFilter) return;
-      if (!tags.has(parsed.key)) {
-        tags.set(parsed.key, { key: parsed.key, name: parsed.name, noteIds: new Set() });
-      }
-      tags.get(parsed.key).noteIds.add(note.id);
-    });
-  });
-  return [...tags.values()]
-    .map((tag) => ({ key: tag.key, name: tag.name, count: tag.noteIds.size }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+  const tags = getTagsForFolder(state.folderFilter);
+  const counts = getTagCounts();
+  return tags.map((tag) => ({
+    key: tag,
+    name: tag,
+    count: counts.get(tag) ?? 0,
+  }));
 }
 
 function renderFolderFilters() {
   const folders = getAvailableFolders();
-  if (state.folderFilter !== ALL_FOLDERS && !folders.some((item) => item.folder === state.folderFilter)) {
+  if (state.folderFilter !== ALL_FOLDERS && !folders.some((item) => item.id === state.folderFilter)) {
     state.folderFilter = ALL_FOLDERS;
     state.tagFilter = ALL_TAGS;
   }
@@ -236,8 +345,8 @@ function renderFolderFilters() {
   refs.tagFolderList.replaceChildren();
   refs.tagFolderList.append(createFolderButton(ALL_FOLDERS, "すべてのメモ", getFolderSourceNotes().length));
 
-  folders.forEach(({ folder, count }) => {
-    refs.tagFolderList.append(createFolderButton(folder, folder, count));
+  folders.forEach(({ id, name, count }) => {
+    refs.tagFolderList.append(createFolderButton(id, name, count));
   });
 }
 
@@ -275,16 +384,34 @@ function renderTagFilters() {
   }
 
   refs.tagFilterList.replaceChildren();
+  refs.folderEditor.replaceChildren();
   if (state.folderFilter === ALL_FOLDERS) {
     refs.folderTagTitle.textContent = "フォルダを選ぶと中のタグが出ます";
     const empty = document.createElement("div");
     empty.className = "folder-tag-empty";
-    empty.textContent = "タグを全部並べず、フォルダを開いた時だけ表示します。";
+    empty.textContent = "＋でフォルダを作り、そこに入れるタグを選ぶと整理できます。";
     refs.tagFilterList.append(empty);
     return;
   }
 
-  refs.folderTagTitle.textContent = `${state.folderFilter} のタグ`;
+  if (state.folderFilter === UNASSIGNED_FOLDER) {
+    refs.folderTagTitle.textContent = `${UNASSIGNED_FOLDER_LABEL} のタグ`;
+    renderUnassignedFolderEditor();
+  } else {
+    const folder = getFolderById(state.folderFilter);
+    if (!folder) return;
+    refs.folderTagTitle.textContent = `${folder.name} のタグ`;
+    renderFolderEditor(folder);
+  }
+
+  if (!tags.length) {
+    const empty = document.createElement("div");
+    empty.className = "folder-tag-empty";
+    empty.textContent = "このフォルダに入っているタグはまだありません。";
+    refs.tagFilterList.append(empty);
+    return;
+  }
+
   refs.tagFilterList.append(createTagButton(ALL_TAGS, "フォルダ全体", getVisibleNotesForFolderOnly().length));
 
   tags.forEach(({ key, name, count }) => {
@@ -298,6 +425,89 @@ function getVisibleNotesForFolderOnly() {
   const notes = getVisibleNotes();
   state.tagFilter = currentTag;
   return notes;
+}
+
+function renderUnassignedFolderEditor() {
+  const box = document.createElement("div");
+  box.className = "folder-editor-note";
+  box.textContent = "どのフォルダにも入っていないタグです。新規フォルダを作ってタグを選ぶと移せます。";
+  refs.folderEditor.append(box);
+}
+
+function renderFolderEditor(folder) {
+  const box = document.createElement("div");
+  box.className = "folder-editor";
+
+  const nameRow = document.createElement("div");
+  nameRow.className = "folder-editor-row";
+
+  const nameLabel = document.createElement("label");
+  nameLabel.className = "folder-name-edit";
+  const nameText = document.createElement("span");
+  nameText.textContent = "フォルダ名";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.value = folder.name;
+  nameInput.dataset.folderNameInput = "true";
+  nameLabel.append(nameText, nameInput);
+
+  const renameButton = document.createElement("button");
+  renameButton.type = "button";
+  renameButton.className = "mini-button";
+  renameButton.dataset.folderAction = "rename";
+  renameButton.textContent = "名前変更";
+
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.className = "mini-button danger";
+  deleteButton.dataset.folderAction = "delete";
+  deleteButton.textContent = "削除";
+
+  nameRow.append(nameLabel, renameButton, deleteButton);
+  box.append(nameRow);
+
+  const assignTitle = document.createElement("div");
+  assignTitle.className = "tag-assign-title";
+  assignTitle.textContent = "フォルダに入れるタグ";
+  box.append(assignTitle);
+
+  const allTags = getAllTagsFromNotes();
+  const list = document.createElement("div");
+  list.className = "tag-assignment-list";
+
+  if (!allTags.length) {
+    const empty = document.createElement("div");
+    empty.className = "folder-tag-empty";
+    empty.textContent = "メモにタグを書くと、ここでフォルダに振り分けられます。";
+    list.append(empty);
+  }
+
+  const counts = getTagCounts(state.notes);
+  allTags.forEach((tag) => {
+    const owner = getTagOwner(tag);
+    const row = document.createElement("label");
+    row.className = "tag-assignment-row";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = owner?.id === folder.id;
+    checkbox.dataset.folderTag = tag;
+
+    const name = document.createElement("span");
+    name.className = "tag-assignment-name";
+    name.textContent = tag;
+
+    const meta = document.createElement("span");
+    meta.className = "tag-assignment-meta";
+    const ownerText = owner && owner.id !== folder.id ? ` / ${owner.name}` : "";
+    meta.textContent = `${counts.get(tag) ?? 0}件${ownerText}`;
+
+    row.append(checkbox, name, meta);
+    list.append(row);
+  });
+
+  box.append(list);
+  refs.folderEditor.append(box);
 }
 
 function createTagButton(value, label, count) {
@@ -475,6 +685,74 @@ function showToast(message) {
   showToast.timer = window.setTimeout(() => refs.toast.classList.remove("show"), 1500);
 }
 
+function addFolder() {
+  collectCurrentNote();
+  const folder = createTagFolder();
+  state.folders.push(folder);
+  state.folderFilter = folder.id;
+  state.tagFilter = ALL_TAGS;
+  persistFolders();
+  render();
+  const input = refs.folderEditor.querySelector("[data-folder-name-input]");
+  input?.focus();
+  input?.select();
+  showToast("フォルダを作りました");
+}
+
+function renameSelectedFolder() {
+  const folder = getFolderById(state.folderFilter);
+  const input = refs.folderEditor.querySelector("[data-folder-name-input]");
+  if (!folder || !input) return;
+  const nextName = input.value.trim();
+  if (!nextName) {
+    input.value = folder.name;
+    showToast("フォルダ名を入力してください");
+    return;
+  }
+  if (state.folders.some((item) => item.id !== folder.id && item.name === nextName)) {
+    input.value = folder.name;
+    showToast("同じ名前のフォルダがあります");
+    return;
+  }
+  folder.name = nextName;
+  persistFolders();
+  render();
+  showToast("フォルダ名を変更しました");
+}
+
+function deleteSelectedFolder() {
+  const folder = getFolderById(state.folderFilter);
+  if (!folder) return;
+  const ok = window.confirm(`「${folder.name}」を削除します。メモとタグ自体は残ります。`);
+  if (!ok) return;
+  state.folders = state.folders.filter((item) => item.id !== folder.id);
+  state.folderFilter = ALL_FOLDERS;
+  state.tagFilter = ALL_TAGS;
+  persistFolders();
+  render();
+  showToast("フォルダを削除しました");
+}
+
+function moveTagToFolder(tag, folderId) {
+  const clean = normalizeTag(tag);
+  if (!clean) return;
+  state.folders.forEach((folder) => {
+    folder.tags = folder.tags.filter((item) => item !== clean);
+  });
+  const folder = getFolderById(folderId);
+  if (folder && !folder.tags.includes(clean)) {
+    folder.tags.push(clean);
+    const tagOrder = getAllTagsFromNotes();
+    folder.tags.sort((a, b) => tagOrder.indexOf(a) - tagOrder.indexOf(b));
+  }
+}
+
+function removeTagFromFolder(tag, folderId) {
+  const folder = getFolderById(folderId);
+  if (!folder) return;
+  folder.tags = folder.tags.filter((item) => item !== tag);
+}
+
 document.querySelectorAll(".type-tab").forEach((button) => {
   button.addEventListener("click", () => {
     collectCurrentNote();
@@ -502,6 +780,8 @@ refs.searchInput.addEventListener("input", () => {
   renderList();
 });
 
+refs.addFolderButton.addEventListener("click", addFolder);
+
 refs.tagFolderList.addEventListener("click", (event) => {
   const button = event.target.closest("[data-folder-filter]");
   if (!button) return;
@@ -517,6 +797,45 @@ refs.tagFilterList.addEventListener("click", (event) => {
   collectCurrentNote();
   state.tagFilter = button.dataset.tagFilter;
   render();
+});
+
+refs.folderEditor.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-folder-action]");
+  if (!button) return;
+  collectCurrentNote();
+  if (button.dataset.folderAction === "rename") {
+    renameSelectedFolder();
+  }
+  if (button.dataset.folderAction === "delete") {
+    deleteSelectedFolder();
+  }
+});
+
+refs.folderEditor.addEventListener("change", (event) => {
+  if (event.target.matches("[data-folder-name-input]")) {
+    renameSelectedFolder();
+    return;
+  }
+
+  if (event.target.matches("[data-folder-tag]")) {
+    collectCurrentNote();
+    const tag = event.target.dataset.folderTag;
+    if (event.target.checked) {
+      moveTagToFolder(tag, state.folderFilter);
+    } else {
+      removeTagFromFolder(tag, state.folderFilter);
+    }
+    state.tagFilter = ALL_TAGS;
+    persistFolders();
+    render();
+    showToast("タグのフォルダを更新しました");
+  }
+});
+
+refs.folderEditor.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !event.target.matches("[data-folder-name-input]")) return;
+  event.preventDefault();
+  renameSelectedFolder();
 });
 
 refs.noteList.addEventListener("click", (event) => {
@@ -562,9 +881,7 @@ document.addEventListener("keydown", (event) => {
   input.addEventListener("change", () => {
     collectCurrentNote();
     persistNotes();
-    renderFolderFilters();
-    renderTagFilters();
-    renderList();
+    render();
   });
 });
 
@@ -575,7 +892,7 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js?v=20260704-tag-groups").then((registration) => {
+    navigator.serviceWorker.register("./sw.js?v=20260705-folder-manager").then((registration) => {
       registration.update();
     }).catch(() => {});
   });

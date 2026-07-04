@@ -10,7 +10,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=20260704-tag-groups">
+  <link rel="stylesheet" href="styles.css?v=20260705-folder-manager">
 </head>
 <body>
   <div class="app-shell">
@@ -47,12 +47,20 @@
         </nav>
 
         <section class="tag-folder-panel" aria-label="タグフォルダ">
-          <div class="tag-folder-title">タグフォルダ</div>
+          <div class="folder-panel-head">
+            <div class="tag-folder-title">タグフォルダ</div>
+            <button id="addFolderButton" class="icon-button" type="button" aria-label="新規フォルダ">
+              <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 5v14M5 12h14"></path>
+              </svg>
+            </button>
+          </div>
           <div class="tag-folder-list" id="tagFolderList"></div>
         </section>
 
         <section class="folder-tag-panel" aria-label="フォルダ内のタグ">
           <div class="folder-tag-title" id="folderTagTitle">フォルダ内のタグ</div>
+          <div class="folder-editor-panel" id="folderEditor"></div>
           <div class="folder-tag-list" id="tagFilterList"></div>
         </section>
 
@@ -108,7 +116,7 @@
 
         <label class="tag-field">
           <span>タグ</span>
-          <input id="tagsInput" type="text" placeholder="例: ジム/腹圧, 声/母音">
+          <input id="tagsInput" type="text" placeholder="例: 腹圧, スクワット, 母音">
         </label>
 
         <div class="status-line">
@@ -130,6 +138,6 @@
   </div>
 
   <div class="toast" id="toast" role="status" aria-live="polite">保存しました</div>
-  <script src="app.js?v=20260704-tag-groups"></script>
+  <script src="app.js?v=20260705-folder-manager"></script>
 </body>
 </html>
