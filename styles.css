@@ -316,6 +316,48 @@ textarea:disabled {
   color: var(--green-dark);
 }
 
+.folder-tag-panel {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.folder-tag-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.folder-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.folder-tag-button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.folder-tag-button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.folder-tag-empty {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+  font-weight: 750;
+}
+
 .list-head {
   min-height: 58px;
   display: flex;

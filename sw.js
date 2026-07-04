@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v4-tag-folders";
+const CACHE_NAME = "session-os-v5-tag-groups";
 const ASSETS = [
   "./",
   "./index.html",

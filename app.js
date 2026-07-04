@@ -7,41 +7,18 @@ const typeLabels = {
   cross: "横断",
 };
 
-const seedNotes = [
-  {
-    id: "note-gym-20260628",
-    type: "gym",
-    title: "下半身と体幹",
-    date: "2026-06-28",
-    body: "スクワットはしゃがむ前に息を入れる。足裏三点で押す。右膝が内側に入りやすいから、次回は横から動画を撮る。",
-    tags: ["腹圧", "スクワット", "動画"],
-    updatedAt: "2026-06-28T07:52:00.000Z",
-  },
-  {
-    id: "note-vocal-20260626",
-    type: "vocal",
-    title: "高音前の息",
-    date: "2026-06-26",
-    body: "高音の直前だけで頑張らない。子音の前から息を準備して、母音に変わる瞬間で止めない。語尾まで支える。",
-    tags: ["母音", "ブレス", "録音"],
-    updatedAt: "2026-06-26T10:48:00.000Z",
-  },
-  {
-    id: "note-cross-20260616",
-    type: "cross",
-    title: "胸郭の動き",
-    date: "2026-06-16",
-    body: "ジムの腹圧と歌の支えは似ているけど、胸を固めすぎると声は抜けない。固めるより、戻れる余白を残す。",
-    tags: ["胸郭", "呼吸", "支え"],
-    updatedAt: "2026-06-16T12:30:00.000Z",
-  },
-];
+const ALL_FOLDERS = "all";
+const ALL_TAGS = "all";
+const UNFILED_FOLDER = "未分類";
+
+const seedNotes = [];
 
 const state = {
   notes: loadNotes(),
   activeId: null,
   filter: "all",
-  tagFilter: "all",
+  folderFilter: ALL_FOLDERS,
+  tagFilter: ALL_TAGS,
   search: "",
 };
 
@@ -52,7 +29,9 @@ const refs = {
   newNoteButton: document.getElementById("newNoteButton"),
   noteCount: document.getElementById("noteCount"),
   noteList: document.getElementById("noteList"),
+  tagFolderList: document.getElementById("tagFolderList"),
   tagFilterList: document.getElementById("tagFilterList"),
+  folderTagTitle: document.getElementById("folderTagTitle"),
   dateInput: document.getElementById("dateInput"),
   titleInput: document.getElementById("titleInput"),
   bodyInput: document.getElementById("bodyInput"),
@@ -102,7 +81,7 @@ function normalizeNote(item) {
     title: item.title || "無題のメモ",
     date: item.date || todayValue(),
     body,
-    tags: Array.isArray(item.tags) ? item.tags : [],
+    tags: normalizeTags(Array.isArray(item.tags) ? item.tags : []),
     updatedAt: item.updatedAt || new Date().toISOString(),
   };
 }
@@ -131,7 +110,8 @@ function getVisibleNotes() {
   const query = state.search.trim().toLowerCase();
   return state.notes
     .filter((note) => state.filter === "all" || note.type === state.filter)
-    .filter((note) => state.tagFilter === "all" || note.tags.includes(state.tagFilter))
+    .filter((note) => state.folderFilter === ALL_FOLDERS || note.tags.some((tag) => parseTag(tag).folder === state.folderFilter))
+    .filter((note) => state.tagFilter === ALL_TAGS || note.tags.includes(state.tagFilter))
     .filter((note) => {
       if (!query) return true;
       return [note.title, note.body, ...(note.tags ?? [])].join(" ").toLowerCase().includes(query);
@@ -151,8 +131,15 @@ function createNote(type = "gym") {
   };
 }
 
+function getDefaultTagForCurrentFolder() {
+  if (state.folderFilter === ALL_FOLDERS) return "";
+  if (state.folderFilter === UNFILED_FOLDER) return "未整理";
+  return `${state.folderFilter}/未整理`;
+}
+
 function render() {
   renderFilters();
+  renderFolderFilters();
   renderTagFilters();
   renderList();
   renderEditor();
@@ -174,36 +161,92 @@ function getTagSourceNotes() {
     });
 }
 
-function getAvailableTags() {
-  const tags = new Set();
-  getTagSourceNotes().forEach((note) => {
-    note.tags.forEach((tag) => tags.add(tag));
-  });
-  return [...tags].sort((a, b) => a.localeCompare(b, "ja"));
+function parseTag(tag) {
+  const clean = String(tag ?? "").trim();
+  const slashIndex = clean.indexOf("/");
+  if (slashIndex > 0 && slashIndex < clean.length - 1) {
+    const folder = clean.slice(0, slashIndex).trim();
+    const name = clean.slice(slashIndex + 1).trim();
+    if (folder && name) {
+      return { key: `${folder}/${name}`, folder, name };
+    }
+  }
+  return { key: clean, folder: UNFILED_FOLDER, name: clean };
 }
 
-function renderTagFilters() {
-  const tags = getAvailableTags();
-  if (state.tagFilter !== "all" && !tags.includes(state.tagFilter)) {
-    state.tagFilter = "all";
+function normalizeTag(tag) {
+  const parsed = parseTag(tag);
+  return parsed.name ? parsed.key : "";
+}
+
+function normalizeTags(tags) {
+  const normalized = tags
+    .map(normalizeTag)
+    .filter(Boolean);
+  return [...new Set(normalized)];
+}
+
+function getFolderSourceNotes() {
+  return getTagSourceNotes();
+}
+
+function getAvailableFolders() {
+  const folders = new Map();
+  getFolderSourceNotes().forEach((note) => {
+    note.tags.forEach((tag) => {
+      const parsed = parseTag(tag);
+      if (!parsed.name) return;
+      if (!folders.has(parsed.folder)) {
+        folders.set(parsed.folder, new Set());
+      }
+      folders.get(parsed.folder).add(note.id);
+    });
+  });
+  return [...folders.entries()]
+    .map(([folder, ids]) => ({ folder, count: ids.size }))
+    .sort((a, b) => a.folder.localeCompare(b.folder, "ja"));
+}
+
+function getAvailableTagsInFolder() {
+  const tags = new Map();
+  if (state.folderFilter === ALL_FOLDERS) return [];
+
+  getTagSourceNotes().forEach((note) => {
+    note.tags.forEach((tag) => {
+      const parsed = parseTag(tag);
+      if (parsed.folder !== state.folderFilter) return;
+      if (!tags.has(parsed.key)) {
+        tags.set(parsed.key, { key: parsed.key, name: parsed.name, noteIds: new Set() });
+      }
+      tags.get(parsed.key).noteIds.add(note.id);
+    });
+  });
+  return [...tags.values()]
+    .map((tag) => ({ key: tag.key, name: tag.name, count: tag.noteIds.size }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ja"));
+}
+
+function renderFolderFilters() {
+  const folders = getAvailableFolders();
+  if (state.folderFilter !== ALL_FOLDERS && !folders.some((item) => item.folder === state.folderFilter)) {
+    state.folderFilter = ALL_FOLDERS;
+    state.tagFilter = ALL_TAGS;
   }
 
-  refs.tagFilterList.replaceChildren();
-  const allButton = createTagFilterButton("all", "すべてのメモ", getTagSourceNotes().length);
-  refs.tagFilterList.append(allButton);
+  refs.tagFolderList.replaceChildren();
+  refs.tagFolderList.append(createFolderButton(ALL_FOLDERS, "すべてのメモ", getFolderSourceNotes().length));
 
-  tags.forEach((tag) => {
-    const count = getTagSourceNotes().filter((note) => note.tags.includes(tag)).length;
-    refs.tagFilterList.append(createTagFilterButton(tag, tag, count));
+  folders.forEach(({ folder, count }) => {
+    refs.tagFolderList.append(createFolderButton(folder, folder, count));
   });
 }
 
-function createTagFilterButton(value, label, count) {
+function createFolderButton(value, label, count) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "tag-folder-button";
-  button.classList.toggle("active", state.tagFilter === value);
-  button.dataset.tagFilter = value;
+  button.classList.toggle("active", state.folderFilter === value);
+  button.dataset.folderFilter = value;
 
   const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   icon.setAttribute("class", "folder-icon");
@@ -222,6 +265,48 @@ function createTagFilterButton(value, label, count) {
   countLabel.textContent = String(count);
 
   button.append(icon, name, countLabel);
+  return button;
+}
+
+function renderTagFilters() {
+  const tags = getAvailableTagsInFolder();
+  if (state.tagFilter !== ALL_TAGS && !tags.some((tag) => tag.key === state.tagFilter)) {
+    state.tagFilter = ALL_TAGS;
+  }
+
+  refs.tagFilterList.replaceChildren();
+  if (state.folderFilter === ALL_FOLDERS) {
+    refs.folderTagTitle.textContent = "フォルダを選ぶと中のタグが出ます";
+    const empty = document.createElement("div");
+    empty.className = "folder-tag-empty";
+    empty.textContent = "タグを全部並べず、フォルダを開いた時だけ表示します。";
+    refs.tagFilterList.append(empty);
+    return;
+  }
+
+  refs.folderTagTitle.textContent = `${state.folderFilter} のタグ`;
+  refs.tagFilterList.append(createTagButton(ALL_TAGS, "フォルダ全体", getVisibleNotesForFolderOnly().length));
+
+  tags.forEach(({ key, name, count }) => {
+    refs.tagFilterList.append(createTagButton(key, name, count));
+  });
+}
+
+function getVisibleNotesForFolderOnly() {
+  const currentTag = state.tagFilter;
+  state.tagFilter = ALL_TAGS;
+  const notes = getVisibleNotes();
+  state.tagFilter = currentTag;
+  return notes;
+}
+
+function createTagButton(value, label, count) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "folder-tag-button";
+  button.classList.toggle("active", state.tagFilter === value);
+  button.dataset.tagFilter = value;
+  button.textContent = `${label} (${count})`;
   return button;
 }
 
@@ -328,8 +413,9 @@ function collectCurrentNote() {
   note.body = refs.bodyInput.value.trim();
   note.tags = refs.tagsInput.value
     .split(/[,、\n]/)
-    .map((tag) => tag.trim())
+    .map(normalizeTag)
     .filter(Boolean);
+  note.tags = [...new Set(note.tags)];
   note.updatedAt = new Date().toISOString();
   return note;
 }
@@ -393,7 +479,8 @@ document.querySelectorAll(".type-tab").forEach((button) => {
   button.addEventListener("click", () => {
     collectCurrentNote();
     state.filter = button.dataset.filter;
-    state.tagFilter = "all";
+    state.folderFilter = ALL_FOLDERS;
+    state.tagFilter = ALL_TAGS;
     render();
   });
 });
@@ -410,8 +497,18 @@ document.querySelectorAll(".type-choice").forEach((button) => {
 refs.searchInput.addEventListener("input", () => {
   collectCurrentNote();
   state.search = refs.searchInput.value;
+  renderFolderFilters();
   renderTagFilters();
   renderList();
+});
+
+refs.tagFolderList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-folder-filter]");
+  if (!button) return;
+  collectCurrentNote();
+  state.folderFilter = button.dataset.folderFilter;
+  state.tagFilter = ALL_TAGS;
+  render();
 });
 
 refs.tagFilterList.addEventListener("click", (event) => {
@@ -434,8 +531,11 @@ refs.newNoteButton.addEventListener("click", () => {
   collectCurrentNote();
   const type = state.filter === "all" ? "gym" : state.filter;
   const note = createNote(type);
-  if (state.tagFilter !== "all") {
+  if (state.tagFilter !== ALL_TAGS) {
     note.tags = [state.tagFilter];
+  } else {
+    const defaultTag = getDefaultTagForCurrentFolder();
+    if (defaultTag) note.tags = [defaultTag];
   }
   state.notes.unshift(note);
   state.activeId = note.id;
@@ -462,6 +562,7 @@ document.addEventListener("keydown", (event) => {
   input.addEventListener("change", () => {
     collectCurrentNote();
     persistNotes();
+    renderFolderFilters();
     renderTagFilters();
     renderList();
   });
@@ -474,7 +575,7 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js?v=20260704-tag-filter").then((registration) => {
+    navigator.serviceWorker.register("./sw.js?v=20260704-tag-groups").then((registration) => {
       registration.update();
     }).catch(() => {});
   });
