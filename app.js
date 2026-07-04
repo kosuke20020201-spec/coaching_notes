@@ -41,6 +41,7 @@ const state = {
   notes: loadNotes(),
   activeId: null,
   filter: "all",
+  tagFilter: "all",
   search: "",
 };
 
@@ -51,6 +52,7 @@ const refs = {
   newNoteButton: document.getElementById("newNoteButton"),
   noteCount: document.getElementById("noteCount"),
   noteList: document.getElementById("noteList"),
+  tagFilterList: document.getElementById("tagFilterList"),
   dateInput: document.getElementById("dateInput"),
   titleInput: document.getElementById("titleInput"),
   bodyInput: document.getElementById("bodyInput"),
@@ -129,6 +131,7 @@ function getVisibleNotes() {
   const query = state.search.trim().toLowerCase();
   return state.notes
     .filter((note) => state.filter === "all" || note.type === state.filter)
+    .filter((note) => state.tagFilter === "all" || note.tags.includes(state.tagFilter))
     .filter((note) => {
       if (!query) return true;
       return [note.title, note.body, ...(note.tags ?? [])].join(" ").toLowerCase().includes(query);
@@ -150,6 +153,7 @@ function createNote(type = "gym") {
 
 function render() {
   renderFilters();
+  renderTagFilters();
   renderList();
   renderEditor();
 }
@@ -158,6 +162,50 @@ function renderFilters() {
   document.querySelectorAll(".type-tab").forEach((button) => {
     button.classList.toggle("active", button.dataset.filter === state.filter);
   });
+}
+
+function getTagSourceNotes() {
+  const query = state.search.trim().toLowerCase();
+  return state.notes
+    .filter((note) => state.filter === "all" || note.type === state.filter)
+    .filter((note) => {
+      if (!query) return true;
+      return [note.title, note.body, ...(note.tags ?? [])].join(" ").toLowerCase().includes(query);
+    });
+}
+
+function getAvailableTags() {
+  const tags = new Set();
+  getTagSourceNotes().forEach((note) => {
+    note.tags.forEach((tag) => tags.add(tag));
+  });
+  return [...tags].sort((a, b) => a.localeCompare(b, "ja"));
+}
+
+function renderTagFilters() {
+  const tags = getAvailableTags();
+  if (state.tagFilter !== "all" && !tags.includes(state.tagFilter)) {
+    state.tagFilter = "all";
+  }
+
+  refs.tagFilterList.replaceChildren();
+  const allButton = createTagFilterButton("all", `すべて (${getTagSourceNotes().length})`);
+  refs.tagFilterList.append(allButton);
+
+  tags.forEach((tag) => {
+    const count = getTagSourceNotes().filter((note) => note.tags.includes(tag)).length;
+    refs.tagFilterList.append(createTagFilterButton(tag, `${tag} (${count})`));
+  });
+}
+
+function createTagFilterButton(value, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "tag-filter-button";
+  button.classList.toggle("active", state.tagFilter === value);
+  button.dataset.tagFilter = value;
+  button.textContent = label;
+  return button;
 }
 
 function renderList() {
@@ -328,6 +376,7 @@ document.querySelectorAll(".type-tab").forEach((button) => {
   button.addEventListener("click", () => {
     collectCurrentNote();
     state.filter = button.dataset.filter;
+    state.tagFilter = "all";
     render();
   });
 });
@@ -344,7 +393,16 @@ document.querySelectorAll(".type-choice").forEach((button) => {
 refs.searchInput.addEventListener("input", () => {
   collectCurrentNote();
   state.search = refs.searchInput.value;
+  renderTagFilters();
   renderList();
+});
+
+refs.tagFilterList.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-tag-filter]");
+  if (!button) return;
+  collectCurrentNote();
+  state.tagFilter = button.dataset.tagFilter;
+  render();
 });
 
 refs.noteList.addEventListener("click", (event) => {
@@ -384,6 +442,7 @@ document.addEventListener("keydown", (event) => {
   input.addEventListener("change", () => {
     collectCurrentNote();
     persistNotes();
+    renderTagFilters();
     renderList();
   });
 });
@@ -395,7 +454,7 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js?v=20260703-delete-fix").then((registration) => {
+    navigator.serviceWorker.register("./sw.js?v=20260704-tag-filter").then((registration) => {
       registration.update();
     }).catch(() => {});
   });

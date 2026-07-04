@@ -239,6 +239,41 @@ textarea:disabled {
   color: #ffffff;
 }
 
+.tag-filter-panel {
+  display: grid;
+  gap: 10px;
+  padding: 0 18px 18px;
+}
+
+.tag-filter-title {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.tag-filter-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-filter-button {
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  padding: 0 11px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.tag-filter-button.active {
+  border-color: var(--green);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
 .list-head {
   min-height: 58px;
   display: flex;
@@ -535,7 +570,9 @@ textarea:disabled {
   }
 
   .app-header {
-    position: static;
+    position: sticky;
+    top: 0;
+    z-index: 20;
     display: grid;
     padding: 16px;
   }

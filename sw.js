@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v2-delete-fix";
+const CACHE_NAME = "session-os-v3-tag-filter";
 const ASSETS = [
   "./",
   "./index.html",
