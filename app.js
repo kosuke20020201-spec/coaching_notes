@@ -88,7 +88,7 @@ function normalizeFolder(item) {
   return {
     id: String(item.id || uid()),
     name,
-    tags: normalizeTags(Array.isArray(item.tags) ? item.tags : []),
+    matchTag: normalizeTag(item.matchTag || name),
   };
 }
 
@@ -108,7 +108,7 @@ function createTagFolder() {
   return {
     id: uid(),
     name,
-    tags: [],
+    matchTag: name,
   };
 }
 
@@ -168,13 +168,12 @@ function getVisibleNotes() {
 
 function noteMatchesFolder(note) {
   if (state.folderFilter === ALL_FOLDERS) return true;
-  const noteTags = note.tags ?? [];
   if (state.folderFilter === UNASSIGNED_FOLDER) {
-    return noteTags.some((tag) => isUnassignedTag(tag));
+    return !noteMatchesAnyFolder(note);
   }
   const folder = getFolderById(state.folderFilter);
   if (!folder) return false;
-  return noteTags.some((tag) => folder.tags.includes(tag));
+  return noteHasTag(note, getFolderMatchTag(folder));
 }
 
 function createNote(type = "gym") {
@@ -189,12 +188,18 @@ function createNote(type = "gym") {
   };
 }
 
-function getDefaultTagForCurrentFolder() {
-  return state.tagFilter === ALL_TAGS ? "" : state.tagFilter;
+function getDefaultTagsForCurrentFolder() {
+  const tags = [];
+  const folder = getFolderById(state.folderFilter);
+  const folderTag = getFolderMatchTag(folder);
+  if (folderTag) tags.push(folderTag);
+  if (state.tagFilter !== ALL_TAGS && !tags.includes(state.tagFilter)) {
+    tags.push(state.tagFilter);
+  }
+  return tags;
 }
 
 function render() {
-  syncFoldersWithExistingTags();
   renderFilters();
   renderFolderFilters();
   renderTagFilters();
@@ -237,6 +242,18 @@ function getFolderById(id) {
   return state.folders.find((folder) => folder.id === id) ?? null;
 }
 
+function getFolderMatchTag(folder) {
+  return normalizeTag(folder?.matchTag || folder?.name || "");
+}
+
+function noteHasTag(note, tag) {
+  return Boolean(tag) && (note.tags ?? []).includes(tag);
+}
+
+function noteMatchesAnyFolder(note) {
+  return state.folders.some((folder) => noteHasTag(note, getFolderMatchTag(folder)));
+}
+
 function getAllTagsFromNotes(notes = state.notes) {
   const tags = new Set();
   notes.forEach((note) => {
@@ -261,49 +278,14 @@ function getTagCounts(notes = getTagSourceNotes()) {
   return new Map([...counts.entries()].map(([tag, ids]) => [tag, ids.size]));
 }
 
-function getTagOwner(tag) {
-  return state.folders.find((folder) => folder.tags.includes(tag)) ?? null;
-}
-
-function isUnassignedTag(tag) {
-  return !getTagOwner(tag);
-}
-
-function getUnassignedTags() {
-  return getAllTagsFromNotes().filter((tag) => isUnassignedTag(tag));
-}
-
-function countNotesForTags(tags, notes = getFolderSourceNotes()) {
-  const targetTags = new Set(tags);
-  if (!targetTags.size) return 0;
-  const noteIds = new Set();
-  notes.forEach((note) => {
-    if ((note.tags ?? []).some((tag) => targetTags.has(tag))) {
-      noteIds.add(note.id);
-    }
-  });
-  return noteIds.size;
-}
-
-function getTagsForFolder(folderId) {
-  if (folderId === UNASSIGNED_FOLDER) return getUnassignedTags();
+function getNotesForFolder(folderId, notes = getFolderSourceNotes()) {
+  if (folderId === ALL_FOLDERS) return notes;
+  if (folderId === UNASSIGNED_FOLDER) {
+    return notes.filter((note) => !noteMatchesAnyFolder(note));
+  }
   const folder = getFolderById(folderId);
-  if (!folder) return [];
-  const existingTags = new Set(getAllTagsFromNotes());
-  return folder.tags.filter((tag) => existingTags.has(tag));
-}
-
-function syncFoldersWithExistingTags() {
-  const existingTags = new Set(getAllTagsFromNotes());
-  let changed = false;
-  state.folders.forEach((folder) => {
-    const nextTags = normalizeTags(folder.tags).filter((tag) => existingTags.has(tag));
-    if (nextTags.length !== folder.tags.length || nextTags.some((tag, index) => tag !== folder.tags[index])) {
-      folder.tags = nextTags;
-      changed = true;
-    }
-  });
-  if (changed) persistFolders();
+  const matchTag = getFolderMatchTag(folder);
+  return notes.filter((note) => noteHasTag(note, matchTag));
 }
 
 function getAvailableFolders() {
@@ -311,14 +293,14 @@ function getAvailableFolders() {
   const folders = state.folders.map((folder) => ({
     id: folder.id,
     name: folder.name,
-    count: countNotesForTags(folder.tags, sourceNotes),
+    count: getNotesForFolder(folder.id, sourceNotes).length,
   }));
-  const unassignedTags = getUnassignedTags();
-  if (unassignedTags.length) {
+  const unassignedNotes = getNotesForFolder(UNASSIGNED_FOLDER, sourceNotes);
+  if (unassignedNotes.length) {
     folders.push({
       id: UNASSIGNED_FOLDER,
       name: UNASSIGNED_FOLDER_LABEL,
-      count: countNotesForTags(unassignedTags, sourceNotes),
+      count: unassignedNotes.length,
     });
   }
   return folders;
@@ -326,8 +308,11 @@ function getAvailableFolders() {
 
 function getAvailableTagsInFolder() {
   if (state.folderFilter === ALL_FOLDERS) return [];
-  const tags = getTagsForFolder(state.folderFilter);
-  const counts = getTagCounts();
+  const folderNotes = getNotesForFolder(state.folderFilter, getTagSourceNotes());
+  const folder = getFolderById(state.folderFilter);
+  const matchTag = getFolderMatchTag(folder);
+  const counts = getTagCounts(folderNotes);
+  const tags = getAllTagsFromNotes(folderNotes).filter((tag) => tag !== matchTag);
   return tags.map((tag) => ({
     key: tag,
     name: tag,
@@ -389,7 +374,7 @@ function renderTagFilters() {
     refs.folderTagTitle.textContent = "フォルダを選ぶと中のタグが出ます";
     const empty = document.createElement("div");
     empty.className = "folder-tag-empty";
-    empty.textContent = "＋でフォルダを作り、そこに入れるタグを選ぶと整理できます。";
+    empty.textContent = "＋でフォルダを作ると、その名前と同じタグの記録が自動で集まります。";
     refs.tagFilterList.append(empty);
     return;
   }
@@ -407,7 +392,7 @@ function renderTagFilters() {
   if (!tags.length) {
     const empty = document.createElement("div");
     empty.className = "folder-tag-empty";
-    empty.textContent = "このフォルダに入っているタグはまだありません。";
+    empty.textContent = "一緒に付いているタグはまだありません。";
     refs.tagFilterList.append(empty);
     return;
   }
@@ -430,7 +415,7 @@ function getVisibleNotesForFolderOnly() {
 function renderUnassignedFolderEditor() {
   const box = document.createElement("div");
   box.className = "folder-editor-note";
-  box.textContent = "どのフォルダにも入っていないタグです。新規フォルダを作ってタグを選ぶと移せます。";
+  box.textContent = "どのフォルダ名にも一致しない記録です。";
   refs.folderEditor.append(box);
 }
 
@@ -466,47 +451,10 @@ function renderFolderEditor(folder) {
   nameRow.append(nameLabel, renameButton, deleteButton);
   box.append(nameRow);
 
-  const assignTitle = document.createElement("div");
-  assignTitle.className = "tag-assign-title";
-  assignTitle.textContent = "フォルダに入れるタグ";
-  box.append(assignTitle);
-
-  const allTags = getAllTagsFromNotes();
-  const list = document.createElement("div");
-  list.className = "tag-assignment-list";
-
-  if (!allTags.length) {
-    const empty = document.createElement("div");
-    empty.className = "folder-tag-empty";
-    empty.textContent = "メモにタグを書くと、ここでフォルダに振り分けられます。";
-    list.append(empty);
-  }
-
-  const counts = getTagCounts(state.notes);
-  allTags.forEach((tag) => {
-    const owner = getTagOwner(tag);
-    const row = document.createElement("label");
-    row.className = "tag-assignment-row";
-
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = owner?.id === folder.id;
-    checkbox.dataset.folderTag = tag;
-
-    const name = document.createElement("span");
-    name.className = "tag-assignment-name";
-    name.textContent = tag;
-
-    const meta = document.createElement("span");
-    meta.className = "tag-assignment-meta";
-    const ownerText = owner && owner.id !== folder.id ? ` / ${owner.name}` : "";
-    meta.textContent = `${counts.get(tag) ?? 0}件${ownerText}`;
-
-    row.append(checkbox, name, meta);
-    list.append(row);
-  });
-
-  box.append(list);
+  const rule = document.createElement("div");
+  rule.className = "folder-rule-text";
+  rule.textContent = `「${getFolderMatchTag(folder)}」タグが付いた記録を自動で集めます。`;
+  box.append(rule);
   refs.folderEditor.append(box);
 }
 
@@ -715,6 +663,7 @@ function renameSelectedFolder() {
     return;
   }
   folder.name = nextName;
+  folder.matchTag = nextName;
   persistFolders();
   render();
   showToast("フォルダ名を変更しました");
@@ -731,26 +680,6 @@ function deleteSelectedFolder() {
   persistFolders();
   render();
   showToast("フォルダを削除しました");
-}
-
-function moveTagToFolder(tag, folderId) {
-  const clean = normalizeTag(tag);
-  if (!clean) return;
-  state.folders.forEach((folder) => {
-    folder.tags = folder.tags.filter((item) => item !== clean);
-  });
-  const folder = getFolderById(folderId);
-  if (folder && !folder.tags.includes(clean)) {
-    folder.tags.push(clean);
-    const tagOrder = getAllTagsFromNotes();
-    folder.tags.sort((a, b) => tagOrder.indexOf(a) - tagOrder.indexOf(b));
-  }
-}
-
-function removeTagFromFolder(tag, folderId) {
-  const folder = getFolderById(folderId);
-  if (!folder) return;
-  folder.tags = folder.tags.filter((item) => item !== tag);
 }
 
 document.querySelectorAll(".type-tab").forEach((button) => {
@@ -814,21 +743,6 @@ refs.folderEditor.addEventListener("click", (event) => {
 refs.folderEditor.addEventListener("change", (event) => {
   if (event.target.matches("[data-folder-name-input]")) {
     renameSelectedFolder();
-    return;
-  }
-
-  if (event.target.matches("[data-folder-tag]")) {
-    collectCurrentNote();
-    const tag = event.target.dataset.folderTag;
-    if (event.target.checked) {
-      moveTagToFolder(tag, state.folderFilter);
-    } else {
-      removeTagFromFolder(tag, state.folderFilter);
-    }
-    state.tagFilter = ALL_TAGS;
-    persistFolders();
-    render();
-    showToast("タグのフォルダを更新しました");
   }
 });
 
@@ -850,12 +764,7 @@ refs.newNoteButton.addEventListener("click", () => {
   collectCurrentNote();
   const type = state.filter === "all" ? "gym" : state.filter;
   const note = createNote(type);
-  if (state.tagFilter !== ALL_TAGS) {
-    note.tags = [state.tagFilter];
-  } else {
-    const defaultTag = getDefaultTagForCurrentFolder();
-    if (defaultTag) note.tags = [defaultTag];
-  }
+  note.tags = getDefaultTagsForCurrentFolder();
   state.notes.unshift(note);
   state.activeId = note.id;
   persistNotes();
@@ -892,7 +801,7 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js?v=20260705-folder-manager").then((registration) => {
+    navigator.serviceWorker.register("./sw.js?v=20260705-folder-rules").then((registration) => {
       registration.update();
     }).catch(() => {});
   });

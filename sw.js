@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v6-folder-manager";
+const CACHE_NAME = "session-os-v7-folder-rules";
 const ASSETS = [
   "./",
   "./index.html",
