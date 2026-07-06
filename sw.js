@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v7-folder-rules";
+const CACHE_NAME = "session-os-v8-type-scoped-folders";
 const ASSETS = [
   "./",
   "./index.html",

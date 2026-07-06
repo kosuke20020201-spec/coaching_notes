@@ -84,9 +84,11 @@ function loadFolders() {
 
 function normalizeFolder(item) {
   const name = String(item?.name ?? "").trim();
+  const type = item?.type === "all" || typeLabels[item?.type] ? item.type : "all";
   if (!name) return null;
   return {
     id: String(item.id || uid()),
+    type,
     name,
     matchTag: normalizeTag(item.matchTag || name),
   };
@@ -107,6 +109,7 @@ function createTagFolder() {
   }
   return {
     id: uid(),
+    type: state.filter === "all" ? "all" : state.filter,
     name,
     matchTag: name,
   };
@@ -246,12 +249,29 @@ function getFolderMatchTag(folder) {
   return normalizeTag(folder?.matchTag || folder?.name || "");
 }
 
+function getFolderType(folder) {
+  return folder?.type === "all" || typeLabels[folder?.type] ? folder.type : "all";
+}
+
+function getFolderTypeLabel(folder) {
+  const type = getFolderType(folder);
+  return type === "all" ? "全体" : typeLabels[type];
+}
+
+function folderAppliesToCurrentType(folder) {
+  if (state.filter === "all") return true;
+  const type = getFolderType(folder);
+  return type === "all" || type === state.filter;
+}
+
 function noteHasTag(note, tag) {
   return Boolean(tag) && (note.tags ?? []).includes(tag);
 }
 
 function noteMatchesAnyFolder(note) {
-  return state.folders.some((folder) => noteHasTag(note, getFolderMatchTag(folder)));
+  return state.folders
+    .filter((folder) => folderAppliesToCurrentType(folder))
+    .some((folder) => noteHasTag(note, getFolderMatchTag(folder)));
 }
 
 function getAllTagsFromNotes(notes = state.notes) {
@@ -290,11 +310,18 @@ function getNotesForFolder(folderId, notes = getFolderSourceNotes()) {
 
 function getAvailableFolders() {
   const sourceNotes = getFolderSourceNotes();
-  const folders = state.folders.map((folder) => ({
-    id: folder.id,
-    name: folder.name,
-    count: getNotesForFolder(folder.id, sourceNotes).length,
-  }));
+  const folders = state.folders
+    .map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+      type: getFolderType(folder),
+      count: getNotesForFolder(folder.id, sourceNotes).length,
+    }))
+    .filter((folder) => {
+      if (state.filter === "all") return true;
+      if (folder.type === state.filter) return true;
+      return folder.type === "all" && folder.count > 0;
+    });
   const unassignedNotes = getNotesForFolder(UNASSIGNED_FOLDER, sourceNotes);
   if (unassignedNotes.length) {
     folders.push({
@@ -451,9 +478,30 @@ function renderFolderEditor(folder) {
   nameRow.append(nameLabel, renameButton, deleteButton);
   box.append(nameRow);
 
+  const typeLabel = document.createElement("label");
+  typeLabel.className = "folder-type-edit";
+  const typeText = document.createElement("span");
+  typeText.textContent = "項目";
+  const typeSelect = document.createElement("select");
+  typeSelect.dataset.folderTypeInput = "true";
+  [
+    ["all", "全体"],
+    ["gym", typeLabels.gym],
+    ["vocal", typeLabels.vocal],
+    ["cross", typeLabels.cross],
+  ].forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = getFolderType(folder) === value;
+    typeSelect.append(option);
+  });
+  typeLabel.append(typeText, typeSelect);
+  box.append(typeLabel);
+
   const rule = document.createElement("div");
   rule.className = "folder-rule-text";
-  rule.textContent = `「${getFolderMatchTag(folder)}」タグが付いた記録を自動で集めます。`;
+  rule.textContent = `${getFolderTypeLabel(folder)}の中で「${getFolderMatchTag(folder)}」タグが付いた記録を自動で集めます。`;
   box.append(rule);
   refs.folderEditor.append(box);
 }
@@ -669,6 +717,16 @@ function renameSelectedFolder() {
   showToast("フォルダ名を変更しました");
 }
 
+function updateSelectedFolderType(value) {
+  const folder = getFolderById(state.folderFilter);
+  if (!folder) return;
+  if (value !== "all" && !typeLabels[value]) return;
+  folder.type = value;
+  persistFolders();
+  render();
+  showToast("項目を変更しました");
+}
+
 function deleteSelectedFolder() {
   const folder = getFolderById(state.folderFilter);
   if (!folder) return;
@@ -744,6 +802,9 @@ refs.folderEditor.addEventListener("change", (event) => {
   if (event.target.matches("[data-folder-name-input]")) {
     renameSelectedFolder();
   }
+  if (event.target.matches("[data-folder-type-input]")) {
+    updateSelectedFolderType(event.target.value);
+  }
 });
 
 refs.folderEditor.addEventListener("keydown", (event) => {
@@ -801,7 +862,7 @@ window.addEventListener("beforeunload", () => {
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js?v=20260705-folder-rules").then((registration) => {
+    navigator.serviceWorker.register("./sw.js?v=20260706-type-scoped-folders").then((registration) => {
       registration.update();
     }).catch(() => {});
   });
