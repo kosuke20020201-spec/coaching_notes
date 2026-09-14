@@ -1,6 +1,7 @@
 const STORAGE_KEY = "lesson-session-os-notes-v2";
 const LEGACY_KEY = "lesson-session-os-v1";
 const FOLDER_STORAGE_KEY = "lesson-session-os-tag-folders-v1";
+const SYNC_URL_KEY = "lesson-session-os-sync-url-v1";
 
 const typeLabels = {
   gym: "ジム",
@@ -48,6 +49,12 @@ const refs = {
   deleteDialogText: document.getElementById("deleteDialogText"),
   cancelDeleteButton: document.getElementById("cancelDeleteButton"),
   confirmDeleteButton: document.getElementById("confirmDeleteButton"),
+  exportButton: document.getElementById("exportButton"),
+  importButton: document.getElementById("importButton"),
+  importFileInput: document.getElementById("importFileInput"),
+  cloudRestoreButton: document.getElementById("cloudRestoreButton"),
+  cloudSettingsButton: document.getElementById("cloudSettingsButton"),
+  cloudStatusText: document.getElementById("cloudStatusText"),
   toast: document.getElementById("toast"),
 };
 
@@ -96,6 +103,7 @@ function normalizeFolder(item) {
 
 function persistFolders() {
   localStorage.setItem(FOLDER_STORAGE_KEY, JSON.stringify(state.folders));
+  scheduleCloudPush();
 }
 
 function createTagFolder() {
@@ -138,6 +146,7 @@ function normalizeNote(item) {
 
 function persistNotes() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.notes));
+  scheduleCloudPush();
 }
 
 function uid() {
@@ -739,6 +748,176 @@ function deleteSelectedFolder() {
   render();
   showToast("フォルダを削除しました");
 }
+
+function getSyncUrl() {
+  return (localStorage.getItem(SYNC_URL_KEY) || "").trim();
+}
+
+function setSyncUrl(url) {
+  const clean = url.trim();
+  if (clean) {
+    localStorage.setItem(SYNC_URL_KEY, clean);
+  } else {
+    localStorage.removeItem(SYNC_URL_KEY);
+  }
+  updateCloudStatus();
+}
+
+function updateCloudStatus() {
+  if (!refs.cloudStatusText) return;
+  refs.cloudStatusText.textContent = getSyncUrl() ? "自動バックアップ: ON" : "自動バックアップ: 未設定";
+}
+
+function promptCloudSettings() {
+  const current = getSyncUrl();
+  const input = window.prompt(
+    "GoogleスプレッドシートのApps Script ウェブアプリURLを貼り付けてください。\n空にして OK すると自動バックアップを解除します。",
+    current
+  );
+  if (input === null) return;
+  setSyncUrl(input);
+  showToast(getSyncUrl() ? "自動バックアップを設定しました" : "自動バックアップを解除しました");
+  scheduleCloudPush(0);
+}
+
+let cloudPushTimer = null;
+
+function scheduleCloudPush(delay = 1200) {
+  const url = getSyncUrl();
+  if (!url) return;
+  window.clearTimeout(cloudPushTimer);
+  cloudPushTimer = window.setTimeout(() => pushToCloud(url), delay);
+}
+
+function pushToCloud(url) {
+  const payload = {
+    app: "session-os",
+    exportedAt: new Date().toISOString(),
+    notes: state.notes,
+    folders: state.folders,
+  };
+  fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify(payload),
+  }).catch(() => {
+    // オフラインや設定ミスの場合はサイレントに失敗。ローカル保存は既に完了している。
+  });
+}
+
+function restoreFromCloud() {
+  const url = getSyncUrl();
+  if (!url) {
+    showToast("先に⚙で自動バックアップのURLを設定してください");
+    return;
+  }
+  showToast("クラウドから確認中...");
+  fetch(url)
+    .then((res) => res.json())
+    .then((data) => {
+      if (!data?.ok) {
+        showToast("読み込めませんでした");
+        return;
+      }
+      if (!data.payload) {
+        showToast("クラウドにバックアップがまだありません");
+        return;
+      }
+      applyImportedPayload(data.payload, data.timestamp ? `（${formatUpdated(data.timestamp)} 時点）` : "");
+    })
+    .catch(() => showToast("クラウドに接続できませんでした"));
+}
+
+function applyImportedPayload(parsed, sourceLabel = "") {
+  const importedNotes = Array.isArray(parsed?.notes)
+    ? parsed.notes.map(normalizeNote)
+    : Array.isArray(parsed)
+      ? parsed.map(normalizeNote)
+      : null;
+
+  if (!importedNotes) {
+    showToast("読み込めませんでした（メモが見つかりません）");
+    return;
+  }
+
+  const importedFolders = Array.isArray(parsed?.folders)
+    ? parsed.folders.map(normalizeFolder).filter(Boolean)
+    : [];
+
+  const ok = window.confirm(
+    `メモ${importedNotes.length}件・フォルダ${importedFolders.length}件を読み込みます${sourceLabel}。\n今あるメモ・フォルダは全て置き換わります。よろしいですか？`
+  );
+  if (!ok) return;
+
+  state.notes = importedNotes;
+  state.folders = importedFolders;
+  state.activeId = state.notes[0]?.id ?? null;
+  state.folderFilter = ALL_FOLDERS;
+  state.tagFilter = ALL_TAGS;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.notes));
+  localStorage.setItem(FOLDER_STORAGE_KEY, JSON.stringify(state.folders));
+  render();
+  showToast("読み込みました");
+}
+
+function exportBackup() {
+  collectCurrentNote();
+  persistNotes();
+  const payload = {
+    app: "session-os",
+    exportedAt: new Date().toISOString(),
+    notes: state.notes,
+    folders: state.folders,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const stamp = new Date();
+  const y = stamp.getFullYear();
+  const m = String(stamp.getMonth() + 1).padStart(2, "0");
+  const d = String(stamp.getDate()).padStart(2, "0");
+  const hh = String(stamp.getHours()).padStart(2, "0");
+  const mm = String(stamp.getMinutes()).padStart(2, "0");
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `session-os-backup-${y}${m}${d}-${hh}${mm}.json`;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("バックアップを書き出しました");
+}
+
+function importBackup(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(String(reader.result));
+    } catch {
+      showToast("読み込めませんでした（JSON形式ではありません）");
+      return;
+    }
+    applyImportedPayload(parsed);
+  };
+  reader.onerror = () => showToast("ファイルを読み込めませんでした");
+  reader.readAsText(file);
+}
+
+refs.exportButton.addEventListener("click", exportBackup);
+
+refs.importButton.addEventListener("click", () => {
+  refs.importFileInput.value = "";
+  refs.importFileInput.click();
+});
+
+refs.importFileInput.addEventListener("change", () => {
+  const file = refs.importFileInput.files?.[0];
+  if (file) importBackup(file);
+});
+
+refs.cloudSettingsButton?.addEventListener("click", promptCloudSettings);
+refs.cloudRestoreButton?.addEventListener("click", restoreFromCloud);
+updateCloudStatus();
 
 document.querySelectorAll(".type-tab").forEach((button) => {
   button.addEventListener("click", () => {

@@ -502,6 +502,15 @@ textarea:disabled {
   font-weight: 850;
 }
 
+.cloud-status {
+  margin-right: auto;
+  padding-left: 12px;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .note-list {
   display: grid;
 }
@@ -782,12 +791,17 @@ textarea:disabled {
   }
 
   .header-actions {
-    display: grid;
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
-  .search-box {
-    width: 100%;
+  .header-actions .search-box {
+    flex: 1 1 100%;
+  }
+
+  .header-actions #newNoteButton {
+    flex: 1 1 auto;
   }
 
   .workspace {
