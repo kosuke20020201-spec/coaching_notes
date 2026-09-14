@@ -2,6 +2,7 @@ const STORAGE_KEY = "lesson-session-os-notes-v2";
 const LEGACY_KEY = "lesson-session-os-v1";
 const FOLDER_STORAGE_KEY = "lesson-session-os-tag-folders-v1";
 const SYNC_URL_KEY = "lesson-session-os-sync-url-v1";
+const SYNC_STATE_KEY = "lesson-session-os-sync-state-v1";
 
 const typeLabels = {
   gym: "ジム",
@@ -760,12 +761,45 @@ function setSyncUrl(url) {
   } else {
     localStorage.removeItem(SYNC_URL_KEY);
   }
+  localStorage.removeItem(SYNC_STATE_KEY);
+  updateCloudStatus();
+}
+
+function getSyncState() {
+  try {
+    return JSON.parse(localStorage.getItem(SYNC_STATE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function setSyncState(state) {
+  localStorage.setItem(SYNC_STATE_KEY, JSON.stringify(state));
   updateCloudStatus();
 }
 
 function updateCloudStatus() {
   if (!refs.cloudStatusText) return;
-  refs.cloudStatusText.textContent = getSyncUrl() ? "自動バックアップ: ON" : "自動バックアップ: 未設定";
+  const url = getSyncUrl();
+  if (!url) {
+    refs.cloudStatusText.textContent = "自動バックアップ: 未設定";
+    refs.cloudStatusText.classList.remove("cloud-status-error");
+    return;
+  }
+  const sync = getSyncState();
+  if (!sync) {
+    refs.cloudStatusText.textContent = "自動バックアップ: ON（未確認・タップで確認）";
+    refs.cloudStatusText.classList.remove("cloud-status-error");
+    return;
+  }
+  if (sync.ok) {
+    refs.cloudStatusText.textContent = `最終同期OK: ${formatUpdated(sync.at)}`;
+    refs.cloudStatusText.classList.remove("cloud-status-error");
+  } else {
+    const lastOk = sync.lastOkAt ? `（前回成功: ${formatUpdated(sync.lastOkAt)}）` : "（成功歴なし）";
+    refs.cloudStatusText.textContent = `同期エラー ${lastOk} タップで再試行`;
+    refs.cloudStatusText.classList.add("cloud-status-error");
+  }
 }
 
 function promptCloudSettings() {
@@ -777,7 +811,7 @@ function promptCloudSettings() {
   if (input === null) return;
   setSyncUrl(input);
   showToast(getSyncUrl() ? "自動バックアップを設定しました" : "自動バックアップを解除しました");
-  scheduleCloudPush(0);
+  if (getSyncUrl()) checkCloudSyncNow();
 }
 
 let cloudPushTimer = null;
@@ -789,7 +823,18 @@ function scheduleCloudPush(delay = 1200) {
   cloudPushTimer = window.setTimeout(() => pushToCloud(url), delay);
 }
 
-function pushToCloud(url) {
+function checkCloudSyncNow() {
+  const url = getSyncUrl();
+  if (!url) {
+    showToast("先に⚙で自動バックアップのURLを設定してください");
+    return;
+  }
+  window.clearTimeout(cloudPushTimer);
+  showToast("同期を確認中...");
+  pushToCloud(url, { manual: true });
+}
+
+function pushToCloud(url, { manual = false } = {}) {
   const payload = {
     app: "session-os",
     exportedAt: new Date().toISOString(),
@@ -800,9 +845,22 @@ function pushToCloud(url) {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
     body: JSON.stringify(payload),
-  }).catch(() => {
-    // オフラインや設定ミスの場合はサイレントに失敗。ローカル保存は既に完了している。
-  });
+  })
+    .then((res) => res.json())
+    .then((data) => {
+      if (data?.ok) {
+        const prevOkAt = getSyncState()?.at ?? null;
+        setSyncState({ ok: true, at: payload.exportedAt, lastOkAt: prevOkAt });
+        if (manual) showToast("同期OK: スプレッドシートに保存されています");
+      } else {
+        throw new Error(data?.error || "unknown error");
+      }
+    })
+    .catch((err) => {
+      const prevOkAt = getSyncState()?.lastOkAt ?? getSyncState()?.at ?? null;
+      setSyncState({ ok: false, at: payload.exportedAt, lastOkAt: prevOkAt, error: String(err) });
+      if (manual) showToast("同期エラー: URLや公開設定を確認してください");
+    });
 }
 
 function restoreFromCloud() {
@@ -917,6 +975,7 @@ refs.importFileInput.addEventListener("change", () => {
 
 refs.cloudSettingsButton?.addEventListener("click", promptCloudSettings);
 refs.cloudRestoreButton?.addEventListener("click", restoreFromCloud);
+refs.cloudStatusText?.addEventListener("click", checkCloudSyncNow);
 updateCloudStatus();
 
 document.querySelectorAll(".type-tab").forEach((button) => {

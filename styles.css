@@ -509,6 +509,12 @@ textarea:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.cloud-status.cloud-status-error {
+  color: var(--danger);
 }
 
 .note-list {

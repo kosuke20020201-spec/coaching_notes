@@ -1,4 +1,4 @@
-const CACHE_NAME = "session-os-v10-cloud-sync";
+const CACHE_NAME = "session-os-v11-cloud-sync-check";
 const ASSETS = [
   "./",
   "./index.html",
